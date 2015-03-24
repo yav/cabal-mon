@@ -6,12 +6,14 @@ import           Graphics.Vty.Prelude (regionHeight)
 import           Data.Map ( Map )
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe, fromMaybe)
+import           Data.List(isInfixOf, isPrefixOf)
 import           Data.IORef (IORef, newIORef, modifyIORef', readIORef)
 import           System.FilePath
 import           Control.Concurrent (forkIO)
-import           System.Process
+import           System.Process(runInteractiveProcess,terminateProcess)
 import           System.IO(hGetContents,hSetBuffering,BufferMode(LineBuffering))
 import           System.Directory (getHomeDirectory,doesFileExist)
+import           System.Environment(getArgs)
 import           Data.Char(isSpace)
 import           Text.Read (readMaybe)
 import           Data.Bits (testBit)
@@ -32,9 +34,10 @@ data Status    = Modified | Unmodified
 
 main :: IO ()
 main =
-  do d            <- guessLogDir
+  do as           <- getArgs
+     d            <- guessLogDir
      (_,hOut,_,p) <- runInteractiveProcess
-                                  "fswatch" ["-x","-n",d] Nothing Nothing
+                    "fswatch" ("-x" : "-n" : as ++ [d]) Nothing Nothing
      hSetBuffering hOut LineBuffering
      txt <- hGetContents hOut
 
@@ -179,16 +182,18 @@ draw st = heading <-> (files <|> preview)
                      Unmodified                -> (noramlText,  chLineNum b)
 
   preview = case (`Map.lookup` buffers st) =<< watching st of
-              Just (_,buf) -> vertCat $ map (string noramlText)
+              Just (_,buf) -> vertCat $ map ppLine
                                       $ bufVisiable (pageHeight st) buf
               _            -> string noramlText "(not watching)"
 
   attr fg bg = withForeColor (withBackColor defAttr bg) fg
 
-  noramlText  = attr white black
-  changedText = attr red   black
-  watchingTxt = attr green black
+  noramlText  = attr white       black
+  changedText = attr red         black
+  watchingTxt = attr green       black
+  brightTxt   = attr brightGreen black
 
+  ppLine (x,i) = string (if i then brightTxt else noramlText) x
 
 --------------------------------------------------------------------------------
 
@@ -249,15 +254,19 @@ data Buffer  = Buffer { chText       :: ![String]
                       , chLineSt     :: !(Maybe Int)
                       } deriving Show
 
-bufVisiable :: Int -> Buffer -> [String]
+interestingLine :: String -> Bool
+interestingLine x = "Linking" `isPrefixOf` x || "registering" `isInfixOf` x
+
+bufVisiable :: Int -> Buffer -> [(String,Bool)]
 bufVisiable h c =
   case chLineSt c of
-    Nothing -> ls
-    Just x  -> map (drop x) ls
+    Nothing -> ls1
+    Just x  -> [ (drop x cs, i) | (cs,i) <- ls1 ]
   where
-  ls = case chStart c of
-         Just n  -> take h $ drop n $ chText c
-         Nothing -> drop (chLineNum c - h) (chText c)
+  ls1 = [ (l, interestingLine l) | l <- ls ]
+  ls  = case chStart c of
+          Just n  -> take h $ drop n $ chText c
+          Nothing -> drop (chLineNum c - h) (chText c)
 
 bufRight :: Buffer -> Buffer
 bufRight c = c { chLineSt = case chLineSt c of
