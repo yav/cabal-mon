@@ -11,9 +11,11 @@ import           Data.List(isInfixOf, isPrefixOf)
 import           Data.IORef (IORef, newIORef, modifyIORef', readIORef)
 import           System.FilePath
 import           Control.Concurrent (forkIO)
+import           Control.Monad (unless)
 import           System.Process(runInteractiveProcess,terminateProcess)
 import           System.IO(hGetContents,hSetBuffering,BufferMode(LineBuffering))
-import           System.Directory (getHomeDirectory,doesFileExist)
+import           System.Directory
+                      (getHomeDirectory,doesFileExist,doesDirectoryExist)
 import           System.Environment(getArgs)
 import           Data.Char(isSpace)
 import           Text.Read (readMaybe)
@@ -242,35 +244,37 @@ getUpdate txt =
 
 handleUpdate :: IORef State -> FilePath -> IO ()
 handleUpdate ref file =
-  do txt <- readFile file
-     let ls     = lines txt
-         lNum   = length ls
-     seq lNum $ modifyIORef' ref $ \st ->
-       case Map.lookup file (buffers st) of
+  do isDir <- doesDirectoryExist file
+     unless isDir $
+       do txt <- readFile file
+          let ls     = lines txt
+              lNum   = length ls
+          seq lNum $ modifyIORef' ref $ \st ->
+            case Map.lookup file (buffers st) of
 
-          -- Is this a new buffer?
-          Nothing ->
-            let bufs1 = Map.insert file
-                       (Modified, Buffer { chText    = ls
-                                         , chStart   = Nothing
-                                         , chLineNum = lNum
-                                         , chLineSt  = Nothing
-                                         })
-                       (buffers st)
-            in case curBuf st of
-                 Nothing -> st { buffers  = bufs1
-                               , curBuf   = Just file
-                               , watching = Just file
-                               }
-                 Just _  -> st { buffers  = bufs1
-                               , nextBufs = file : nextBufs st
-                               }
+               -- Is this a new buffer?
+               Nothing ->
+                 let bufs1 = Map.insert file
+                            (Modified, Buffer { chText    = ls
+                                              , chStart   = Nothing
+                                              , chLineNum = lNum
+                                              , chLineSt  = Nothing
+                                              })
+                            (buffers st)
+                 in case curBuf st of
+                      Nothing -> st { buffers  = bufs1
+                                    , curBuf   = Just file
+                                    , watching = Just file
+                                    }
+                      Just _  -> st { buffers  = bufs1
+                                    , nextBufs = file : nextBufs st
+                                    }
 
-          -- Existing buffer
-          Just (_,b)  -> st { buffers = Map.insert file
-                                          (Modified, bufSetText
-                                                      (pageHeight st) ls b)
-                                          (buffers st) }
+               -- Existing buffer
+               Just (_,b)  -> st { buffers = Map.insert file
+                                               (Modified, bufSetText
+                                                           (pageHeight st) ls b)
+                                               (buffers st) }
 
 
 
