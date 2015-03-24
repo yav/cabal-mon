@@ -13,6 +13,8 @@ import           System.Process
 import           System.IO(hGetContents,hSetBuffering,BufferMode(LineBuffering))
 import           System.Directory (getHomeDirectory,doesFileExist)
 import           Data.Char(isSpace)
+import           Text.Read (readMaybe)
+import           Data.Bits (testBit)
 
 
 type Name   = String
@@ -190,11 +192,19 @@ draw st = heading <-> (files <|> preview)
 
 --------------------------------------------------------------------------------
 
+updateBit :: Int
+updateBit = 2
+
+dropFromEnd :: Int -> [a] -> [a]
+dropFromEnd n xs = take (length xs - n) xs
+
 getUpdate :: String -> Maybe FilePath
 getUpdate txt =
   case words txt of
     xs@(_ : _)
-      | last xs == "4" -> Just (take (length txt - 2) txt)
+      | let numStr = last xs
+      , Just n <- readMaybe numStr
+      , testBit (n::Int) updateBit -> Just (dropFromEnd (length numStr + 1) txt)
     _ -> Nothing
 
 handleUpdate :: IORef State -> FilePath -> IO ()
