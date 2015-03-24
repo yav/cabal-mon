@@ -1,0 +1,10 @@
+This is a utility which makes it easy to keep track of what's going
+on during a parallel Cabal builds.
+
+To use it, you'll need the `fswatch` utility:
+
+http://emcrisostomo.github.io/fswatch/
+
+
+
+
