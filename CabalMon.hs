@@ -2,6 +2,7 @@ module Main(main) where
 
 import           Graphics.Vty
 import           Graphics.Vty.Prelude (regionHeight)
+import           SimpleGetOpt
 
 import           Data.Map ( Map )
 import qualified Data.Map as Map
@@ -32,12 +33,37 @@ data State  = State { buffers    :: !(Map FilePath (Status,Buffer))
 data Status    = Modified | Unmodified
                  deriving Show
 
+data Settings = Settings
+  { fsOpts  :: [String]
+  }
+
+options :: OptSpec Settings
+options = OptSpec
+  { progDefaults = Settings { fsOpts = [] }
+
+  , progOptions =
+      [ Option ['m'] ["monitor"]
+        "Use this monitor (see: fswatch -m)."
+        $ ReqArg "MONITOR" $ \a s -> Right s { fsOpts = "-m" : a : fsOpts s }
+
+      , Option ['l'] ["latency"]
+        "Use the latency (see: fswatch -l)."
+        $ ReqArg "DOUBLE" $ \a s ->
+          case readMaybe a of
+            Just n | n > 0.1  -> Right s { fsOpts = "-l" : a : fsOpts s }
+            _                 -> Left "Invalid latency."
+      ]
+
+  , progParamDocs = []
+  , progParams = \p _ -> Left ("Unknown parameter: " ++ p)
+  }
+
 main :: IO ()
 main =
-  do as           <- getArgs
+  do as           <- getOpts options
      d            <- guessLogDir
      (_,hOut,_,p) <- runInteractiveProcess
-                    "fswatch" ("-x" : "-n" : as ++ [d]) Nothing Nothing
+                    "fswatch" ("-x" : "-n" : fsOpts as ++ [d]) Nothing Nothing
      hSetBuffering hOut LineBuffering
      txt <- hGetContents hOut
 
@@ -110,7 +136,9 @@ vtyLoop vty ref =
                 Just x  ->
                   let unmod (_,y) = (Unmodified,y)
                   in st { watching = Just x
-                        , buffers = Map.adjust unmod x (buffers st)
+                        , buffers = case watching st of
+                                      Just y  -> Map.adjust unmod y (buffers st)
+                                      Nothing -> buffers st
                         }
 
            KUp ->
