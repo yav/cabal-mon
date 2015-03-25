@@ -12,10 +12,13 @@ import           Data.IORef (IORef, newIORef, modifyIORef', readIORef)
 import           System.FilePath
 import           Control.Concurrent (forkIO)
 import           Control.Monad (unless)
+import           Control.Exception(handle,catch,SomeException(..))
 import           System.Process(runInteractiveProcess,terminateProcess)
-import           System.IO(hGetContents,hSetBuffering,BufferMode(LineBuffering))
+import           System.IO(hGetContents,hSetBuffering,BufferMode(LineBuffering)
+                          , hPutStrLn, stderr )
 import           System.Directory
                       (getHomeDirectory,doesFileExist,doesDirectoryExist)
+import           System.Exit(exitFailure)
 import           System.Environment(getArgs)
 import           Data.Char(isSpace)
 import           Text.Read (readMaybe)
@@ -36,12 +39,16 @@ data Status    = Modified | Unmodified
                  deriving Show
 
 data Settings = Settings
-  { fsOpts  :: [String]
+  { fsOpts      :: [String]
+  , fsPath      :: FilePath
+  , fsWatchThis :: Maybe FilePath
   }
 
 options :: OptSpec Settings
 options = OptSpec
-  { progDefaults = Settings { fsOpts = [] }
+  { progDefaults = Settings { fsOpts      = []
+                            , fsPath      = "fswatch"
+                            , fsWatchThis = Nothing }
 
   , progOptions =
       [ Option ['m'] ["monitor"]
@@ -54,6 +61,14 @@ options = OptSpec
           case readMaybe a of
             Just n | n > 0.1  -> Right s { fsOpts = "-l" : a : fsOpts s }
             _                 -> Left "Invalid latency."
+
+      , Option ['p'] ["path"]
+        "The path for the `fswatch` executable."
+        $ ReqArg "PATH" $ \a s -> Right s { fsPath = a }
+
+      , Option ['d'] ["dir"]
+        "Watch this directory of logs."
+        $ ReqArg "DIR" $ \a s -> Right s { fsWatchThis = Just a }
       ]
 
   , progParamDocs = []
@@ -62,10 +77,19 @@ options = OptSpec
 
 main :: IO ()
 main =
-  do as           <- getOpts options
-     d            <- guessLogDir
+  do as <- getOpts options
+     d  <- case fsWatchThis as of
+             Nothing -> guessLogDir
+                `catch` \SomeException {} ->
+                            do hPutStrLn stderr "Failed to work out directory"
+                               exitFailure
+             Just d -> return d
+
      (_,hOut,_,p) <- runInteractiveProcess
-               "fswatch" ("-r" : "-x" : "-n" : fsOpts as ++ [d]) Nothing Nothing
+        (fsPath as) ("-r" : "-x" : "-n" : fsOpts as ++ [d]) Nothing Nothing
+        `catch` \SomeException {} ->
+                    do hPutStrLn stderr ("Failed to start " ++ show (fsPath as))
+                       exitFailure
      hSetBuffering hOut LineBuffering
      txt <- hGetContents hOut
 
@@ -244,6 +268,7 @@ getUpdate txt =
 
 handleUpdate :: IORef State -> FilePath -> IO ()
 handleUpdate ref file =
+  handle (\SomeException {} -> return ()) $
   do isDir <- doesDirectoryExist file
      unless isDir $
        do txt <- readFile file
