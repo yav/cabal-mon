@@ -65,7 +65,7 @@ main =
   do as           <- getOpts options
      d            <- guessLogDir
      (_,hOut,_,p) <- runInteractiveProcess
-                    "fswatch" ("-x" : "-n" : fsOpts as ++ [d]) Nothing Nothing
+               "fswatch" ("-r" : "-x" : "-n" : fsOpts as ++ [d]) Nothing Nothing
      hSetBuffering hOut LineBuffering
      txt <- hGetContents hOut
 
@@ -287,7 +287,9 @@ data Buffer  = Buffer { chText       :: ![String]
                       } deriving Show
 
 interestingLine :: String -> Bool
-interestingLine x = "Linking" `isPrefixOf` x || "registering" `isInfixOf` x
+interestingLine x = "Linking" `isPrefixOf` x
+                 || "Registering" `isPrefixOf` x
+                 || "registering" `isInfixOf` x
 
 bufVisiable :: Int -> Buffer -> [(String,Bool)]
 bufVisiable h c =
