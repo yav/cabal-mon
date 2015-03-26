@@ -1,6 +1,8 @@
 name:                cabal-mon
-version:             0.1.0.0
+version:             1.0.0
 synopsis:            A monitor for cabal builds
+description:         A vty-based wrapper around the `fswatch` utility,
+                     which makes it easy to monitor parallel Cabal builds.
 license:             MIT
 license-file:        LICENSE
 author:              Iavor S. Diatchki
@@ -12,7 +14,7 @@ cabal-version:       >=1.10
 executable cabal-mon
   main-is:             CabalMon.hs
   build-depends:
-    base,
+    base < 5,
     vty,
     simple-get-opt,
     containers,
