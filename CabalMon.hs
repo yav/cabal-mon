@@ -35,7 +35,7 @@ data State  = State { buffers    :: !(Map FilePath (Status,Buffer))
                     , logDir     :: FilePath
                     } deriving Show
 
-data Status    = Modified | Unmodified
+data Status    = Modified Int | Unmodified
                  deriving Show
 
 data Settings = Settings
@@ -223,17 +223,19 @@ draw st = heading <-> (files <|> preview)
                     [ ppItem True (fromMaybe "(no files)" (curBuf st)) ] ++
                     map (ppItem False) (nextBufs st)
 
-  ppItem sel x = string a name -- (name ++ " (" ++ show n ++ ")")
+  ppItem sel x = case mbN of
+                   Nothing -> string a name
+                   Just n  -> string a (name ++ " (" ++ show n ++ ")")
     where
-    name    = dropExtension (takeFileName x)
-    a       = if sel then a' `withStyle` reverseVideo else a'
-    (a',n)  = case Map.lookup x (buffers st) of
-                 Nothing -> (noramlText, 0)
-                 Just (sta,b) ->
-                   case sta of
-                     _ | Just x == watching st -> (watchingTxt, chLineNum b)
-                     Modified                  -> (changedText, chLineNum b)
-                     Unmodified                -> (noramlText,  chLineNum b)
+    name      = dropExtension (takeFileName x)
+    a         = if sel then a' `withStyle` reverseVideo else a'
+    (a',mbN)  = case Map.lookup x (buffers st) of
+                  Nothing -> (noramlText, Nothing)
+                  Just (sta,b) ->
+                    case sta of
+                      _ | Just x == watching st -> (watchingTxt, Nothing)
+                      Modified n                -> (changedText, Just n)
+                      Unmodified                -> (noramlText,  Nothing)
 
   preview = case (`Map.lookup` buffers st) =<< watching st of
               Just (_,buf) -> vertCat $ map ppLine
@@ -280,11 +282,11 @@ handleUpdate ref file =
                -- Is this a new buffer?
                Nothing ->
                  let bufs1 = Map.insert file
-                            (Modified, Buffer { chText    = ls
-                                              , chStart   = Nothing
-                                              , chLineNum = lNum
-                                              , chLineSt  = Nothing
-                                              })
+                            (Modified 1, Buffer { chText    = ls
+                                                , chStart   = Nothing
+                                                , chLineNum = lNum
+                                                , chLineSt  = Nothing
+                                                })
                             (buffers st)
                  in case curBuf st of
                       Nothing -> st { buffers  = bufs1
@@ -296,10 +298,13 @@ handleUpdate ref file =
                                     }
 
                -- Existing buffer
-               Just (_,b)  -> st { buffers = Map.insert file
-                                               (Modified, bufSetText
+               Just (_,b)  -> st { buffers = Map.insertWith jn file
+                                               (Modified 1, bufSetText
                                                            (pageHeight st) ls b)
                                                (buffers st) }
+  where
+  jn (Modified x, a) (Modified n, _) = (Modified (x + n), a)
+  jn a _                             = a
 
 
 
