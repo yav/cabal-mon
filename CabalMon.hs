@@ -19,7 +19,6 @@ import           System.IO(hGetContents,hSetBuffering,BufferMode(LineBuffering)
 import           System.Directory
                       (getHomeDirectory,doesFileExist,doesDirectoryExist)
 import           System.Exit(exitFailure)
-import           System.Environment(getArgs)
 import           Data.Char(isSpace)
 import           Text.Read (readMaybe)
 import           Data.Bits (testBit)
@@ -59,7 +58,8 @@ options = OptSpec
         "Use the latency (see: fswatch -l)."
         $ ReqArg "DOUBLE" $ \a s ->
           case readMaybe a of
-            Just n | n > 0.1  -> Right s { fsOpts = "-l" : a : fsOpts s }
+            Just n | (n::Double) > 0.1
+                              -> Right s { fsOpts = "-l" : a : fsOpts s }
             _                 -> Left "Invalid latency."
 
       , Option ['p'] ["path"]
@@ -118,8 +118,15 @@ guessLogDir =
      txt <- readFile cfg
      case mapMaybe isLogLine (lines txt) of
        l : _ -> return l
-       _ -> do d <- getHomeDirectory
-               return (d </> ".cabal" </> "logs")
+
+       -- Default, let's do some guess work
+       _ ->
+        do let stackDir = ".stack-work"
+           yes <- doesDirectoryExist  stackDir
+           if yes
+             then return (stackDir </> "logs")
+             else do d <- getHomeDirectory
+                     return (d </> ".cabal" </> "logs")
   where
   configFile = do let sandbox = "cabal.sandbox.config"
                   yes <- doesFileExist sandbox
@@ -141,7 +148,6 @@ vtyLoop vty ref =
      evt <- nextEvent vty
      case evt of
        EvResize _ y -> upd $ \st -> st { pageHeight = y }
-       EvMouse {}   -> again
        EvKey k _ ->
          case k of
            KEsc -> shutdown vty
@@ -196,6 +202,7 @@ vtyLoop vty ref =
 
 
            _          -> again
+       _          -> again
   where
   again = vtyLoop vty ref
   upd f = do modifyIORef' ref f
@@ -231,7 +238,7 @@ draw st = heading <-> (files <|> preview)
     a         = if sel then a' `withStyle` reverseVideo else a'
     (a',mbN)  = case Map.lookup x (buffers st) of
                   Nothing -> (noramlText, Nothing)
-                  Just (sta,b) ->
+                  Just (sta,_) ->
                     case sta of
                       _ | Just x == watching st -> (watchingTxt, Nothing)
                       Modified n                -> (changedText, Just n)
